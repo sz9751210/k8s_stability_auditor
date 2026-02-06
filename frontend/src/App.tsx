@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, CheckCircle, RefreshCw, ShieldAlert, Activity, Server } from 'lucide-react'
+import { AlertTriangle, CheckCircle, RefreshCw, ShieldAlert, Activity, Server, Download, PieChart } from 'lucide-react'
+import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip } from 'recharts'
 
 interface AuditItem {
     Timestamp: string
@@ -13,6 +14,11 @@ interface AuditItem {
 }
 
 const CATEGORIES = ['All', 'Stability', 'Security', 'FinOps']
+const COLORS = {
+    CRITICAL: '#ef4444', // Red 500
+    HIGH: '#f97316',     // Orange 500
+    WARN: '#eab308',     // Yellow 500
+}
 
 function App() {
     const [data, setData] = useState<AuditItem[]>([])
@@ -50,6 +56,26 @@ function App() {
         }
     }
 
+    const downloadCSV = () => {
+        if (data.length === 0) return
+
+        const headers = ['Timestamp', 'Namespace', 'Type', 'Name', 'Category', 'Level', 'Issue', 'Recommendation']
+        const rows = data.map(i => [
+            i.Timestamp, i.Namespace, i.Type, i.Name, i.Category, i.Issue_Level, i.Issue_Type, i.Recommendation
+        ])
+
+        const csvContent = "data:text/csv;charset=utf-8,"
+            + [headers.join(','), ...rows.map(e => e.map(s => `"${s}"`).join(','))].join('\n')
+
+        const encodedUri = encodeURI(csvContent)
+        const link = document.createElement("a")
+        link.setAttribute("href", encodedUri)
+        link.setAttribute("download", `k8s_audit_report_${new Date().toISOString()}.csv`)
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+    }
+
     useEffect(() => {
         fetchReport()
     }, [])
@@ -60,6 +86,12 @@ function App() {
         high: data.filter(i => i.Issue_Level === 'HIGH').length,
         warn: data.filter(i => i.Issue_Level === 'WARN').length,
     }
+
+    const chartData = [
+        { name: 'Critical', value: stats.critical, color: COLORS.CRITICAL },
+        { name: 'High', value: stats.high, color: COLORS.HIGH },
+        { name: 'Warning', value: stats.warn, color: COLORS.WARN },
+    ].filter(d => d.value > 0)
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 text-slate-100 font-sans">
@@ -78,26 +110,70 @@ function App() {
                             <p className="text-slate-400 text-sm">Cluster Health & Security Inspector</p>
                         </div>
                     </div>
-                    <button
-                        onClick={runAudit}
-                        disabled={loading}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all
-              ${loading
-                                ? 'bg-slate-700 cursor-not-allowed opacity-50'
-                                : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 hover:scale-105 active:scale-95'
-                            }`}
-                    >
-                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                        {loading ? 'Auditing...' : 'Run Audit'}
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={downloadCSV}
+                            disabled={data.length === 0}
+                            className="flex items-center gap-2 px-4 py-3 rounded-lg font-medium border border-slate-600 hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Download className="w-5 h-5" />
+                            Export CSV
+                        </button>
+                        <button
+                            onClick={runAudit}
+                            disabled={loading}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all
+                            ${loading
+                                    ? 'bg-slate-700 cursor-not-allowed opacity-50'
+                                    : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 hover:scale-105 active:scale-95'
+                                }`}
+                        >
+                            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                            {loading ? 'Auditing...' : 'Run Audit'}
+                        </button>
+                    </div>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <StatCard label="Total Issues" value={stats.total} icon={<Server className="w-5 h-5" />} color="text-slate-200" bg="bg-slate-700/30" />
-                    <StatCard label="Critical" value={stats.critical} icon={<ShieldAlert className="w-5 h-5" />} color="text-red-400" bg="bg-red-500/10" border="border-red-500/20" />
-                    <StatCard label="High Risk" value={stats.high} icon={<AlertTriangle className="w-5 h-5" />} color="text-orange-400" bg="bg-orange-500/10" border="border-orange-500/20" />
-                    <StatCard label="FinOps Waste" value={data.filter(i => i.Category === 'FinOps').length} icon={<CheckCircle className="w-5 h-5" />} color="text-emerald-400" bg="bg-emerald-500/10" border="border-emerald-500/20" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Stats Grid */}
+                    <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <StatCard label="Total Issues" value={stats.total} icon={<Server className="w-5 h-5" />} color="text-slate-200" bg="bg-slate-700/30" />
+                        <StatCard label="Critical" value={stats.critical} icon={<ShieldAlert className="w-5 h-5" />} color="text-red-400" bg="bg-red-500/10" border="border-red-500/20" />
+                        <StatCard label="High Risk" value={stats.high} icon={<AlertTriangle className="w-5 h-5" />} color="text-orange-400" bg="bg-orange-500/10" border="border-orange-500/20" />
+                        <StatCard label="FinOps Waste" value={data.filter(i => i.Category === 'FinOps').length} icon={<CheckCircle className="w-5 h-5" />} color="text-emerald-400" bg="bg-emerald-500/10" border="border-emerald-500/20" />
+                    </div>
+
+                    {/* Chart */}
+                    <div className="glass-panel p-6 flex flex-col items-center justify-center min-h-[200px]">
+                        <h3 className="text-sm font-medium text-slate-400 mb-4 w-full text-left flex items-center gap-2">
+                            <PieChart className="w-4 h-4" /> Issue Severity
+                        </h3>
+                        {chartData.length > 0 ? (
+                            <div className="w-full h-[160px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie
+                                            data={chartData}
+                                            innerRadius={50}
+                                            outerRadius={70}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {chartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                                            ))}
+                                        </Pie>
+                                        <ReTooltip
+                                            contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                                            itemStyle={{ color: '#f1f5f9' }}
+                                        />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="text-slate-600 text-sm">No data to display</div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Filter Tabs */}
@@ -107,8 +183,8 @@ function App() {
                             key={cat}
                             onClick={() => setActiveCategory(cat)}
                             className={`px-4 py-2 text-sm font-medium transition-colors ${activeCategory === cat
-                                    ? 'text-blue-400 border-b-2 border-blue-400'
-                                    : 'text-slate-500 hover:text-slate-300'
+                                ? 'text-blue-400 border-b-2 border-blue-400'
+                                : 'text-slate-500 hover:text-slate-300'
                                 }`}
                         >
                             {cat}

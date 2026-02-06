@@ -13,22 +13,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
-COPY main.py .
+COPY app /app/app
 
-# We wait to mount the script via volume or copy it now? 
-# The plan implies script is in root. We should copy it into container.
-# In docker-compose context context might be different, but let's assume root context or copy relevant files.
-# For simplicity, we assume build context will allow accessing script, OR we mount it.
-# To be safe for standalone build, let's assume we copy it from potential context, but 
-# standard docker compose usually builds from subdirectory.
-# We will handle this in docker-compose.yml by setting context to root or copying script.
-# For now, let's assume the build context is the `backend` folder? 
-# If context is backend folder, we can't access `../audit_k8s.sh` easily without context adjustment.
-# WE WILL SET CONTEXT TO ROOT in docker-compose.
+# We need to make sure we are in /app and pythonpath is correct, but since we copied into /app/app it might be weird.
+# Best practice is to have backend/ as root.
+# Let's assume WORKDIR /app.
+# If we copy backend/app to /app/app.
+# Then `uvicorn app.main:app` works.
 
-# Just in case, we will rely on VOLUME mount or docker compose logic.
-# But for 'Standard' Dockerfile, let's copy it if it exists in current dir.
-# Actually, better to just rely on volume in Compose or Copy in root context.
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
