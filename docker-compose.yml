@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      # We need to copy the script from parent dir.
+      # Docker build context is backend/, so it can't access parent.
+      # We should change context to root and specify dockerfile.
+    # Improved Context:
+    build:
+    build: 
+      context: ./backend
+    container_name: k8s-auditor-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.kube/config:/root/.kube/config:ro  # Mount Host Kubeconfig
+      - ./audit_k8s.sh:/app/audit_k8s.sh      # Mount script (live edit)
+    environment:
+      - KUBECONFIG=/root/.kube/config
+    networks:
+      - k8s-net
+
+  frontend:
+    build: ./frontend
+    container_name: k8s-auditor-frontend
+    ports:
+      - "5173:80" # Map host 5173 to Nginx 80 (since user might expect 5173 from dev, or just 8080)
+      # Let's map to 5173 to be consistent with Vite defaults or 3000. 5173 is fine.
+    networks:
+      - k8s-net
+    depends_on:
+      - backend
+
+networks:
+  k8s-net:
+    driver: bridge
