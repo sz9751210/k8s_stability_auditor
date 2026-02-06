@@ -9,13 +9,17 @@ interface AuditItem {
     Issue_Level: string
     Issue_Type: string
     Recommendation: string
+    Category: string
 }
+
+const CATEGORIES = ['All', 'Stability', 'Security', 'FinOps']
 
 function App() {
     const [data, setData] = useState<AuditItem[]>([])
     const [loading, setLoading] = useState(false)
     const [lastRun, setLastRun] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const [activeCategory, setActiveCategory] = useState('All')
 
     const fetchReport = async () => {
         try {
@@ -93,7 +97,23 @@ function App() {
                     <StatCard label="Total Issues" value={stats.total} icon={<Server className="w-5 h-5" />} color="text-slate-200" bg="bg-slate-700/30" />
                     <StatCard label="Critical" value={stats.critical} icon={<ShieldAlert className="w-5 h-5" />} color="text-red-400" bg="bg-red-500/10" border="border-red-500/20" />
                     <StatCard label="High Risk" value={stats.high} icon={<AlertTriangle className="w-5 h-5" />} color="text-orange-400" bg="bg-orange-500/10" border="border-orange-500/20" />
-                    <StatCard label="Warning" value={stats.warn} icon={<CheckCircle className="w-5 h-5" />} color="text-yellow-400" bg="bg-yellow-500/10" border="border-yellow-500/20" />
+                    <StatCard label="FinOps Waste" value={data.filter(i => i.Category === 'FinOps').length} icon={<CheckCircle className="w-5 h-5" />} color="text-emerald-400" bg="bg-emerald-500/10" border="border-emerald-500/20" />
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex gap-4 border-b border-glassBorder pb-1">
+                    {CATEGORIES.map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => setActiveCategory(cat)}
+                            className={`px-4 py-2 text-sm font-medium transition-colors ${activeCategory === cat
+                                    ? 'text-blue-400 border-b-2 border-blue-400'
+                                    : 'text-slate-500 hover:text-slate-300'
+                                }`}
+                        >
+                            {cat}
+                        </button>
+                    ))}
                 </div>
 
                 {/* Error Banner */}
@@ -116,6 +136,7 @@ function App() {
                             <thead>
                                 <tr className="bg-slate-900/50 text-slate-400 text-sm uppercase tracking-wider">
                                     <th className="p-4 font-medium">Level</th>
+                                    <th className="p-4 font-medium">Category</th>
                                     <th className="p-4 font-medium">Namespace</th>
                                     <th className="p-4 font-medium">Resource</th>
                                     <th className="p-4 font-medium">Issue</th>
@@ -123,29 +144,34 @@ function App() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800 text-sm">
-                                {data.length === 0 ? (
+                                {data.filter(i => activeCategory === 'All' || i.Category === activeCategory).length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="p-8 text-center text-slate-500">
-                                            No issues found or audit not yet run.
+                                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                                            No issues found in this category.
                                         </td>
                                     </tr>
                                 ) : (
-                                    data.map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
-                                            <td className="p-4">
-                                                <Badge level={item.Issue_Level} />
-                                            </td>
-                                            <td className="p-4 text-slate-300 font-mono">{item.Namespace}</td>
-                                            <td className="p-4">
-                                                <div className="flex flex-col">
-                                                    <span className="font-medium text-slate-200">{item.Name}</span>
-                                                    <span className="text-xs text-slate-500">{item.Type}</span>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-slate-300">{item.Issue_Type}</td>
-                                            <td className="p-4 text-slate-400 text-xs max-w-xs">{item.Recommendation}</td>
-                                        </tr>
-                                    ))
+                                    data
+                                        .filter(i => activeCategory === 'All' || i.Category === activeCategory)
+                                        .map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
+                                                <td className="p-4">
+                                                    <Badge level={item.Issue_Level} />
+                                                </td>
+                                                <td className="p-4">
+                                                    <span className="px-2 py-1 rounded-md text-xs font-bold border border-slate-600/50 bg-slate-800/50 text-slate-300">{item.Category || 'Stability'}</span>
+                                                </td>
+                                                <td className="p-4 text-slate-300 font-mono">{item.Namespace}</td>
+                                                <td className="p-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium text-slate-200">{item.Name}</span>
+                                                        <span className="text-xs text-slate-500">{item.Type}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 text-slate-300">{item.Issue_Type}</td>
+                                                <td className="p-4 text-slate-400 text-xs max-w-xs">{item.Recommendation}</td>
+                                            </tr>
+                                        ))
                                 )}
                             </tbody>
                         </table>
