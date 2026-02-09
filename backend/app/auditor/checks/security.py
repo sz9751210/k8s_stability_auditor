@@ -80,3 +80,28 @@ def check_ingress_security(items, results, timestamp, exclude_ns):
                 "Detail": "Ingress has no TLS configuration",
                 "Recommendation": "Enable TLS for secure access"
             })
+
+def check_network_policies(items, results, timestamp, exclude_ns):
+    policed_ns = set()
+    all_ns = set()
+    
+    for item in items:
+        ns = item.get("metadata", {}).get("namespace")
+        if ns: all_ns.add(ns)
+        if item.get("kind") == "NetworkPolicy":
+            policed_ns.add(ns)
+            
+    for ns in all_ns:
+        if ns in exclude_ns: continue
+        if ns not in policed_ns:
+             results.append({
+                "Timestamp": timestamp,
+                "Namespace": ns,
+                "Type": "Namespace",
+                "Name": ns,
+                "Issue_Level": "WARN",
+                "Issue_Type": "Missing NetworkPolicy",
+                "Category": "Security",
+                "Detail": "Namespace has no NetworkPolicies",
+                "Recommendation": "Isolate traffic with NetworkPolicies (Zero Trust)"
+            })

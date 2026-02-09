@@ -6,10 +6,10 @@ EXCLUDE_NS = os.getenv("EXCLUDE_NS", "kube-system,kube-public,local-path-storage
 
 def run_kubectl_get():
     """Fetches key resources in JSON format."""
-    # Added horizontalpodautoscalers, ingresses for new checks
+    # Added horizontalpodautoscalers, ingresses, resourcequotas, poddisruptionbudgets, networkpolicies for new checks
     cmd = [
         "kubectl", "get", 
-        "deployments,statefulsets,daemonsets,services,persistentvolumes,horizontalpodautoscalers,ingresses", 
+        "deployments,statefulsets,daemonsets,services,persistentvolumes,horizontalpodautoscalers,ingresses,resourcequotas,poddisruptionbudgets,networkpolicies", 
         "-A", "-o", "json"
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)

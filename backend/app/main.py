@@ -23,6 +23,7 @@ def audit_workloads(data):
     finops.audit_finops_global(items, results, timestamp, EXCLUDE_NS)
     stability.check_hpa_coverage(items, results, timestamp, EXCLUDE_NS)
     security.check_ingress_security(items, results, timestamp, EXCLUDE_NS)
+    security.check_network_policies(items, results, timestamp, EXCLUDE_NS)
 
     # 2. Per-Item Checks
     for item in items:

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { AlertTriangle, CheckCircle, RefreshCw, ShieldAlert, Activity, Server, Download, PieChart } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { AlertTriangle, CheckCircle, RefreshCw, ShieldAlert, Activity, Server, Download, PieChart, Filter } from 'lucide-react'
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip } from 'recharts'
 
 interface AuditItem {
@@ -15,9 +15,9 @@ interface AuditItem {
 
 const CATEGORIES = ['All', 'Stability', 'Security', 'FinOps']
 const COLORS = {
-    CRITICAL: '#ef4444', // Red 500
-    HIGH: '#f97316',     // Orange 500
-    WARN: '#eab308',     // Yellow 500
+    CRITICAL: '#ef4444',
+    HIGH: '#f97316',
+    WARN: '#eab308',
 }
 
 function App() {
@@ -26,6 +26,7 @@ function App() {
     const [lastRun, setLastRun] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [activeCategory, setActiveCategory] = useState('All')
+    const [activeNamespace, setActiveNamespace] = useState('All')
 
     const fetchReport = async () => {
         try {
@@ -58,19 +59,16 @@ function App() {
 
     const downloadCSV = () => {
         if (data.length === 0) return
-
         const headers = ['Timestamp', 'Namespace', 'Type', 'Name', 'Category', 'Level', 'Issue', 'Recommendation']
         const rows = data.map(i => [
             i.Timestamp, i.Namespace, i.Type, i.Name, i.Category, i.Issue_Level, i.Issue_Type, i.Recommendation
         ])
-
         const csvContent = "data:text/csv;charset=utf-8,"
             + [headers.join(','), ...rows.map(e => e.map(s => `"${s}"`).join(','))].join('\n')
-
         const encodedUri = encodeURI(csvContent)
         const link = document.createElement("a")
-        link.setAttribute("href", encodedUri)
-        link.setAttribute("download", `k8s_audit_report_${new Date().toISOString()}.csv`)
+        link.href = encodedUri
+        link.download = `k8s_audit_report_${new Date().toISOString()}.csv`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
@@ -80,12 +78,42 @@ function App() {
         fetchReport()
     }, [])
 
-    const stats = {
-        total: data.length,
-        critical: data.filter(i => i.Issue_Level === 'CRITICAL').length,
-        high: data.filter(i => i.Issue_Level === 'HIGH').length,
-        warn: data.filter(i => i.Issue_Level === 'WARN').length,
-    }
+    // Derived State
+    const namespaces = useMemo(() => {
+        const ns = new Set(data.map(i => i.Namespace).filter(n => n !== 'cluster-scope'))
+        return ['All', ...Array.from(ns).sort()]
+    }, [data])
+
+    const filteredData = useMemo(() => {
+        return data.filter(i => {
+            const catMatch = activeCategory === 'All' || i.Category === activeCategory
+            const nsMatch = activeNamespace === 'All' || i.Namespace === activeNamespace
+            return catMatch && nsMatch
+        })
+    }, [data, activeCategory, activeNamespace])
+
+    const stats = useMemo(() => {
+        return {
+            total: data.length,
+            critical: data.filter(i => i.Issue_Level === 'CRITICAL').length,
+            high: data.filter(i => i.Issue_Level === 'HIGH').length,
+            warn: data.filter(i => i.Issue_Level === 'WARN').length,
+        }
+    }, [data])
+
+    // Health Score Algorithm
+    const healthScore = useMemo(() => {
+        if (data.length === 0 && !lastRun) return 100 // Default state
+        if (data.length === 0 && lastRun) return 100 // No issues found
+
+        let score = 100
+        score -= (stats.critical * 5)
+        score -= (stats.high * 3)
+        score -= (stats.warn * 1)
+        return Math.max(0, score)
+    }, [stats, data.length, lastRun])
+
+    const healthColor = healthScore > 80 ? 'text-emerald-400' : healthScore > 50 ? 'text-yellow-400' : 'text-red-400'
 
     const chartData = [
         { name: 'Critical', value: stats.critical, color: COLORS.CRITICAL },
@@ -98,7 +126,7 @@ function App() {
             <div className="max-w-7xl mx-auto space-y-8">
 
                 {/* Header */}
-                <div className="flex justify-between items-center glass-panel p-6">
+                <div className="flex flex-col md:flex-row justify-between items-center glass-panel p-6 gap-4">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
                             <Activity className="w-8 h-8 text-blue-400" />
@@ -110,27 +138,37 @@ function App() {
                             <p className="text-slate-400 text-sm">Cluster Health & Security Inspector</p>
                         </div>
                     </div>
-                    <div className="flex gap-3">
-                        <button
-                            onClick={downloadCSV}
-                            disabled={data.length === 0}
-                            className="flex items-center gap-2 px-4 py-3 rounded-lg font-medium border border-slate-600 hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <Download className="w-5 h-5" />
-                            Export CSV
-                        </button>
-                        <button
-                            onClick={runAudit}
-                            disabled={loading}
-                            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all
-                            ${loading
-                                    ? 'bg-slate-700 cursor-not-allowed opacity-50'
-                                    : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 hover:scale-105 active:scale-95'
-                                }`}
-                        >
-                            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-                            {loading ? 'Auditing...' : 'Run Audit'}
-                        </button>
+
+                    <div className="flex items-center gap-6">
+                        <div className="flex flex-col items-end">
+                            <span className="text-xs text-slate-400 uppercase tracking-widest">Health Score</span>
+                            <span className={`text-3xl font-black ${healthColor}`}>{healthScore}</span>
+                        </div>
+
+                        <div className="h-10 w-px bg-slate-700 mx-2 hidden md:block"></div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={downloadCSV}
+                                disabled={data.length === 0}
+                                className="flex items-center gap-2 px-4 py-3 rounded-lg font-medium border border-slate-600 hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Download className="w-5 h-5" />
+                                Export
+                            </button>
+                            <button
+                                onClick={runAudit}
+                                disabled={loading}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all
+                    ${loading
+                                        ? 'bg-slate-700 cursor-not-allowed opacity-50'
+                                        : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 hover:scale-105 active:scale-95'
+                                    }`}
+                            >
+                                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                                {loading ? 'Auditing...' : 'Run Audit'}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -138,9 +176,9 @@ function App() {
                     {/* Stats Grid */}
                     <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                         <StatCard label="Total Issues" value={stats.total} icon={<Server className="w-5 h-5" />} color="text-slate-200" bg="bg-slate-700/30" />
-                        <StatCard label="Critical" value={stats.critical} icon={<ShieldAlert className="w-5 h-5" />} color="text-red-400" bg="bg-red-500/10" border="border-red-500/20" />
-                        <StatCard label="High Risk" value={stats.high} icon={<AlertTriangle className="w-5 h-5" />} color="text-orange-400" bg="bg-orange-500/10" border="border-orange-500/20" />
-                        <StatCard label="FinOps Waste" value={data.filter(i => i.Category === 'FinOps').length} icon={<CheckCircle className="w-5 h-5" />} color="text-emerald-400" bg="bg-emerald-500/10" border="border-emerald-500/20" />
+                        <StatCard label="Critical Risks" value={stats.critical} icon={<ShieldAlert className="w-5 h-5" />} color="text-red-400" bg="bg-red-500/10" border="border-red-500/20" />
+                        <StatCard label="High Risks" value={stats.high} icon={<AlertTriangle className="w-5 h-5" />} color="text-orange-400" bg="bg-orange-500/10" border="border-orange-500/20" />
+                        <StatCard label="FinOps Findings" value={data.filter(i => i.Category === 'FinOps').length} icon={<CheckCircle className="w-5 h-5" />} color="text-emerald-400" bg="bg-emerald-500/10" border="border-emerald-500/20" />
                     </div>
 
                     {/* Chart */}
@@ -171,25 +209,42 @@ function App() {
                                 </ResponsiveContainer>
                             </div>
                         ) : (
-                            <div className="text-slate-600 text-sm">No data to display</div>
+                            <div className="text-slate-600 text-sm flex items-center justify-center h-full">
+                                {loading ? 'Analyzing...' : 'No issues found'}
+                            </div>
                         )}
                     </div>
                 </div>
 
-                {/* Filter Tabs */}
-                <div className="flex gap-4 border-b border-glassBorder pb-1">
-                    {CATEGORIES.map(cat => (
-                        <button
-                            key={cat}
-                            onClick={() => setActiveCategory(cat)}
-                            className={`px-4 py-2 text-sm font-medium transition-colors ${activeCategory === cat
-                                ? 'text-blue-400 border-b-2 border-blue-400'
-                                : 'text-slate-500 hover:text-slate-300'
-                                }`}
+                {/* Filters */}
+                <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 border-b border-glassBorder pb-1">
+                    <div className="flex gap-4">
+                        {CATEGORIES.map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => setActiveCategory(cat)}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${activeCategory === cat
+                                        ? 'text-blue-400 border-b-2 border-blue-400'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                    }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-2">
+                        <Filter className="w-4 h-4 text-slate-500" />
+                        <select
+                            value={activeNamespace}
+                            onChange={(e) => setActiveNamespace(e.target.value)}
+                            className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
                         >
-                            {cat}
-                        </button>
-                    ))}
+                            {namespaces.map(ns => (
+                                <option key={ns} value={ns}>{ns === 'All' ? 'All Namespaces' : ns}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
                 {/* Error Banner */}
@@ -203,7 +258,9 @@ function App() {
                 {/* Results Table */}
                 <div className="glass-panel overflow-hidden">
                     <div className="p-6 border-b border-glassBorder flex justify-between items-center">
-                        <h2 className="text-lg font-semibold text-slate-200">Audit Results</h2>
+                        <h2 className="text-lg font-semibold text-slate-200">
+                            Audit Findings ({filteredData.length})
+                        </h2>
                         {lastRun && <span className="text-xs text-slate-500">Last updated: {lastRun}</span>}
                     </div>
 
@@ -220,34 +277,32 @@ function App() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800 text-sm">
-                                {data.filter(i => activeCategory === 'All' || i.Category === activeCategory).length === 0 ? (
+                                {filteredData.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} className="p-8 text-center text-slate-500">
-                                            No issues found in this category.
+                                            {loading ? 'Running audit...' : 'No issues matches your filters.'}
                                         </td>
                                     </tr>
                                 ) : (
-                                    data
-                                        .filter(i => activeCategory === 'All' || i.Category === activeCategory)
-                                        .map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
-                                                <td className="p-4">
-                                                    <Badge level={item.Issue_Level} />
-                                                </td>
-                                                <td className="p-4">
-                                                    <span className="px-2 py-1 rounded-md text-xs font-bold border border-slate-600/50 bg-slate-800/50 text-slate-300">{item.Category || 'Stability'}</span>
-                                                </td>
-                                                <td className="p-4 text-slate-300 font-mono">{item.Namespace}</td>
-                                                <td className="p-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-medium text-slate-200">{item.Name}</span>
-                                                        <span className="text-xs text-slate-500">{item.Type}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 text-slate-300">{item.Issue_Type}</td>
-                                                <td className="p-4 text-slate-400 text-xs max-w-xs">{item.Recommendation}</td>
-                                            </tr>
-                                        ))
+                                    filteredData.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-800/50 transition-colors">
+                                            <td className="p-4">
+                                                <Badge level={item.Issue_Level} />
+                                            </td>
+                                            <td className="p-4">
+                                                <span className="px-2 py-1 rounded-md text-xs font-bold border border-slate-600/50 bg-slate-800/50 text-slate-300">{item.Category || 'Stability'}</span>
+                                            </td>
+                                            <td className="p-4 text-slate-300 font-mono">{item.Namespace}</td>
+                                            <td className="p-4">
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium text-slate-200">{item.Name}</span>
+                                                    <span className="text-xs text-slate-500">{item.Type}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-4 text-slate-300">{item.Issue_Type}</td>
+                                            <td className="p-4 text-slate-400 text-xs max-w-xs">{item.Recommendation}</td>
+                                        </tr>
+                                    ))
                                 )}
                             </tbody>
                         </table>
@@ -258,30 +313,28 @@ function App() {
     )
 }
 
-function StatCard({ label, value, icon, color, bg, border = 'border-transparent' }: any) {
+function StatCard({ label, value, icon, color, bg, border = 'border-transparent' }: { label: string, value: number, icon: any, color: string, bg: string, border?: string }) {
     return (
-        <div className={`glass-panel p-5 border ${border} flex items-start justify-between`}>
+        <div className={`p-6 rounded-xl border ${border} ${bg} backdrop-blur-sm flex items-center justify-between group hover:scale-[1.02] transition-transform`}>
             <div>
-                <p className="text-slate-400 text-sm font-medium mb-1">{label}</p>
-                <span className={`text-3xl font-bold ${color}`}>{value}</span>
+                <p className={`text-sm font-medium ${color} opacity-80 mb-1`}>{label}</p>
+                <p className={`text-3xl font-bold ${color}`}>{value}</p>
             </div>
-            <div className={`p-2 rounded-lg ${bg} ${color}`}>
-                {icon}
+            <div className={`p-3 rounded-lg ${bg} brightness-125`}>
+                <div className={color}>{icon}</div>
             </div>
         </div>
     )
 }
 
 function Badge({ level }: { level: string }) {
-    const styles: Record<string, string> = {
-        CRITICAL: 'bg-red-500/20 text-red-300 border-red-500/30',
-        HIGH: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-        WARN: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+    const styles = {
+        CRITICAL: 'bg-red-500/10 text-red-400 border-red-500/20',
+        HIGH: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+        WARN: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
     }
-    const defaultStyle = 'bg-slate-700/50 text-slate-400 border-slate-600'
-
     return (
-        <span className={`px-2 py-1 rounded-md text-xs font-bold border ${styles[level] || defaultStyle}`}>
+        <span className={`px-2 py-1 rounded text-xs font-bold border ${styles[level as keyof typeof styles] || 'bg-slate-700 text-slate-300'}`}>
             {level}
         </span>
     )
